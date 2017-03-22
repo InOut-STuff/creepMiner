@@ -93,26 +93,8 @@ void Burst::Miner::run()
 				return;
 		}
 
-		// create plot reader
-		size_t plotReaderToCreate = MinerConfig::getConfig().getMaxPlotReaders();
-
-		plotReader_ = std::make_unique<WorkerList<PlotReader>>(Poco::Thread::Priority::PRIO_HIGHEST,
-			plotReaderToCreate,
-			*this, progress_, verificationQueue_, plotReadQueue_);
-
-		auto plotReader = plotReader_->size();
-
-		//auto plotReader = createWorkers<PlotReader>(plotReaderToCreate, *plotReaderThreadPool_,
-			//Poco::Thread::Priority::PRIO_HIGHEST, *this, progress_, verificationQueue_, plotReadQueue_);
-
-		if (plotReader != plotReaderToCreate)
-		{
-			log_critical(MinerLogger::miner, "Could not create all plot reader (%z/%z)!\n"
-				"Lower the setting \"maxPlotReaders\"!", plotReader, plotReaderToCreate);
-
-			if (plotReader == 0)
-				return;
-		}
+		if (!createPlotReaders())
+			return;
 	}
 
 	wallet_ = MinerConfig::getConfig().getWalletUrl();
@@ -221,6 +203,10 @@ void Burst::Miner::updateGensig(const std::string gensigStr, uint64_t blockHeigh
 		plotReadQueue_.enqueueNotification(plotRead);
 	};
 
+	log_debug(MinerLogger::miner, "Creating plot readers...");
+	createPlotReaders();
+	log_debug(MinerLogger::miner, "%z Plot readers created, now creating work for them...", plotReader_->size());
+
 	for (auto& plotDir : MinerConfig::getConfig().getPlotDirs())
 	{
 		if (plotDir->getType() == PlotDir::Type::Parallel)
@@ -243,6 +229,8 @@ void Burst::Miner::updateGensig(const std::string gensigStr, uint64_t blockHeigh
 			plotReadQueue_.enqueueNotification(plotRead);
 		}
 	}
+
+	log_debug(MinerLogger::miner, "Work for plot readers created.");
 }
 
 const Burst::GensigData& Burst::Miner::getGensig() const
@@ -330,6 +318,40 @@ Burst::SubmitResponse Burst::Miner::addNewDeadline(uint64_t nonce, uint64_t acco
 	}
 
 	return SubmitResponse::Error;
+}
+
+bool Burst::Miner::createPlotReaders()
+{
+	// create plot reader
+	size_t plotReaderToCreate = MinerConfig::getConfig().getMaxPlotReaders();
+
+	if (plotReader_ != nullptr)
+	{
+		log_debug(MinerLogger::miner, "Stopping plot readers...");
+		plotReadQueue_.wakeUpAll();
+		plotReader_->stop();
+		log_debug(MinerLogger::miner, "Plot readers stopped");
+	}
+
+	plotReader_ = std::make_unique<WorkerList<PlotReader>>(Poco::Thread::Priority::PRIO_HIGH,
+		plotReaderToCreate,
+		*this, progress_, verificationQueue_, plotReadQueue_);
+
+	auto plotReader = plotReader_->size();
+
+	//auto plotReader = createWorkers<PlotReader>(plotReaderToCreate, *plotReaderThreadPool_,
+	//Poco::Thread::Priority::PRIO_HIGHEST, *this, progress_, verificationQueue_, plotReadQueue_);
+
+	if (plotReader != plotReaderToCreate)
+	{
+		log_critical(MinerLogger::miner, "Could not create all plot reader (%z/%z)!\n"
+			"Lower the setting \"maxPlotReaders\"!", plotReader, plotReaderToCreate);
+
+		if (plotReader == 0)
+			return false;
+	}
+
+	return true;
 }
 
 void Burst::Miner::submitNonce(uint64_t nonce, uint64_t accountId, uint64_t deadline, uint64_t blockheight, std::string plotFile)

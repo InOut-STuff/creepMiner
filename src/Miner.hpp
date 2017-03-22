@@ -65,6 +65,7 @@ namespace Burst
 		NonceConfirmation submitNonceAsyncImpl(const std::tuple<uint64_t, uint64_t, uint64_t, uint64_t, std::string>& data);
 		SubmitResponse addNewDeadline(uint64_t nonce, uint64_t accountId, uint64_t deadline, uint64_t blockheight, std::string plotFile,
 			 std::shared_ptr<Deadline>& newDeadline);
+		bool createPlotReaders();
 
 		bool running_ = false;
 		MinerData data_;
